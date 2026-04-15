@@ -29,54 +29,64 @@ def guardar_documento(db: Session, alumno_id: int, file: UploadFile, tipo: str, 
     documentos_existentes = db.query(Documento).filter(Documento.id_alumno == alumno_id).count()
 
     if user.rol.nombre == "digitalizador":
-        if documentos_existentes >= 1:
-            raise HTTPException(status_code=400, detail="El digitalizador solo puede subir un documento inicial por alumno.")
-        # Asegurarse de que el digitalizador solo sube para sus propios alumnos
+        doc_existente = db.query(Documento).filter(
+            Documento.id_alumno == alumno_id,
+            Documento.tipo == "digitalizador"
+        ).first()
+
+        # ❌ Bloquear SOLO si intenta crear otro distinto (no reemplazar)
+        if doc_existente and tipo != "digitalizador":
+            raise HTTPException(status_code=400, detail="Tipo de documento inválido.")
+
+        # ✔ Validaciones existentes
         if alumno.id_digitalizador != user.id:
             raise HTTPException(status_code=403, detail="No autorizado para subir documentos a este alumno")
+
         if alumno.estado != "pendiente":
-            raise HTTPException(status_code=440, detail="Solo se pueden subir documentos a alumnos en estado pendiente")
+            raise HTTPException(status_code=400, detail="Solo se pueden subir documentos a alumnos en estado pendiente")
+        elif user.rol.nombre == "administrativo":
+            if documentos_existentes >= 2:
+                raise HTTPException(status_code=400, detail="Ya existen dos documentos para este alumno. No se pueden subir más.")
+            # Asegurarse de que el administrativo sube el acta para un alumno pendiente
+            if alumno.estado != "pendiente":
+                raise HTTPException(status_code=400, detail="Solo se pueden subir actas a alumnos en estado pendiente")
 
-    elif user.rol.nombre == "administrativo":
-        if documentos_existentes >= 2:
-            raise HTTPException(status_code=400, detail="Ya existen dos documentos para este alumno. No se pueden subir más.")
-        # Asegurarse de que el administrativo sube el acta para un alumno pendiente
-        if alumno.estado != "pendiente":
-            raise HTTPException(status_code=400, detail="Solo se pueden subir actas a alumnos en estado pendiente")
+        # Guardar archivo físicamente
+        ruta_guardado = guardar_archivo(alumno_id, file, tipo)
 
-    # Guardar archivo físicamente
-    ruta_guardado = guardar_archivo(alumno_id, file, tipo)
+        # Crear o actualizar registro de documento en DB
+        doc = db.query(Documento).filter(Documento.id_alumno == alumno_id, Documento.tipo == tipo).first()
+        if doc:
+            # 🧹 eliminar archivo anterior
+            if os.path.exists(doc.ruta_archivo):
+                os.remove(doc.ruta_archivo)
 
-    # Crear o actualizar registro de documento en DB
-    doc = db.query(Documento).filter(Documento.id_alumno == alumno_id, Documento.tipo == tipo).first()
-    if doc:
-        # Si ya existe un documento del mismo tipo, lo actualizamos (ej. si el digitalizador resube)
-        doc.ruta_archivo = ruta_guardado
-        doc.nombre_original = file.filename
-        doc.tamanio_bytes = file.size
-        doc.subido_por = user.id
-    else:
-        doc = Documento(
-            id_alumno=alumno_id,
-            tipo=tipo,
-            ruta_archivo=ruta_guardado,
-            nombre_original=file.filename,
-            tamanio_bytes=file.size,
-            subido_por=user.id
+            doc.ruta_archivo = ruta_guardado
+            doc.nombre_original = file.filename
+            doc.tamanio_bytes = file.size
+            doc.subido_por = user.id
+        else:
+            doc = Documento(
+                id_alumno=alumno_id,
+                tipo=tipo,
+                ruta_archivo=ruta_guardado,
+                nombre_original=file.filename,
+                tamanio_bytes=file.size,
+                subido_por=user.id
+            )
+            db.add(doc)
+        
+        db.commit()
+        db.refresh(doc)
+
+        registrar_historial(
+            db, user,
+            "SUBIR_DOCUMENTO",
+            alumno.id,
+            {"tipo": tipo, "nombre_archivo": file.filename}
         )
-        db.add(doc)
-    
-    db.commit()
-    db.refresh(doc)
 
-    registrar_historial(
-        db, user,
-        "SUBIR_DOCUMENTO",
-        alumno.id,
-        {"tipo": tipo, "nombre_archivo": file.filename}
-    )
-
-    return doc
+        return doc
 
 
 def obtener_documentos_alumno(db: Session, alumno_id: int, user):

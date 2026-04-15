@@ -256,6 +256,12 @@
                 let alumnoId = id;
                 if (id) {
                     await api.alumnos.editar(id, data);
+
+                const file = document.getElementById("pdf-alumno").files[0];
+                if (file) {
+                    await api.documentos.subir(id, "digitalizador", file);
+                }
+                
                 } else {
                     const nuevo = await api.alumnos.crear(data);
                     alumnoId = nuevo.id;
