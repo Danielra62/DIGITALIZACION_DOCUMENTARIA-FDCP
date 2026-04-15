@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>docuAlumnos - Detalle Alumno</title>
+    <link rel="stylesheet" href="../css/main.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="brand">docuAlumnos</div>
+        <div class="nav-links">
+            <a href="dashboard.html">Dashboard</a>
+            <a href="alumnos.html">← Volver</a>
+            <a href="#" onclick="auth.logout()">Cerrar Sesión</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <!-- Info del alumno -->
+        <div class="login-card" style="max-width: 100%; margin-bottom: 2rem;">
+            <h2>Información del Alumno</h2>
+            <div id="detalle-content" class="mt-2">Cargando...</div>
+        </div>
+
+        <!-- Documentos -->
+        <div class="table-container">
+            <h3>Documentos PDF</h3>
+            <div id="docs-list" class="mt-2">Cargando documentos...</div>
+
+            <!-- Sección subir PDF: solo aparece cuando corresponde al rol -->
+            <div id="upload-section" class="hidden mt-2" style="display:flex; gap:1rem; align-items:center; flex-wrap:wrap;">
+                <div id="tipo-doc-display" style="font-weight:600; color:var(--secondary);"></div>
+                <input type="file" id="file-doc" accept=".pdf" style="flex:1;">
+                <button onclick="subirDocumento()" style="width:auto; padding:0.5rem 1.5rem;">Subir PDF</button>
+            </div>
+        </div>
+
+        <!-- Acciones administrativo: SOLO administrativo, SOLO si estado es pendiente -->
+        <div id="acciones-admin" class="hidden mt-2" style="justify-content: center; gap: 1rem; display:none;">
+            <button onclick="aprobarAlumno()" style="background-color: var(--success); width: auto; padding: 1rem 2rem;">✔ APROBAR REGISTRO</button>
+        </div>
+    </div>
+
+    <script src="../js/api.js"></script>
+
+    <script src="../js/auth.js"></script>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const alumnoId = urlParams.get("id");
+
+        async function cargarDetalle() {
+            if (!alumnoId) {
+                alert("ID de alumno no especificado.");
+                window.location.href = "alumnos.html";
+                return;
+            }
+
+            const userRole = await auth.getUserRole();
+
+            let alumno, documentos;
+            try {
+                alumno = await api.alumnos.obtener(alumnoId);
+                documentos = await api.documentos.listarPorAlumno(alumnoId);
+            } catch (error) {
+                alert("Error al cargar el detalle: " + error.message);
+                window.location.href = "alumnos.html";
+                return;
+            }
+
+            // ---- Información del alumno por rol ----
+            const detalleContent = document.getElementById("detalle-content");
+
+            if (userRole === "sistemas") {
+                // Auditoría: campos limitados
+                detalleContent.innerHTML = `
+                    <div class="detalle-grid">
+                        <p><strong>Código:</strong> ${alumno.codigo}</p>
+                        <p><strong>Nombres:</strong> ${alumno.nombres}</p>
+                        <p><strong>Apellidos:</strong> ${alumno.apellidos}</p>
+                        <p><strong>Subido por:</strong> ${alumno.digitalizador ? alumno.digitalizador.nombre_display : '—'}</p>
+                        <p><strong>Aprobado por:</strong> ${alumno.aprobador ? alumno.aprobador.nombre_display : '—'}</p>
+                    </div>
+                `;
+            } else {
+                // Digitalizador y administrativo ven info completa
+                detalleContent.innerHTML = `
+                    <div class="detalle-grid">
+                        <p><strong>Código:</strong> ${alumno.codigo}</p>
+                        <p><strong>Nombre Completo:</strong> ${alumno.nombres} ${alumno.apellidos}</p>
+                        <p><strong>Año Ingreso:</strong> ${alumno.anio_ingreso}</p>
+                        <p><strong>Departamento:</strong> ${alumno.departamento}</p>
+                        <p><strong>Escuela:</strong> ${alumno.escuela ? alumno.escuela.nombre : '—'}</p>
+                        <p><strong>Estado:</strong> <span class="badge badge-${alumno.estado}">${alumno.estado}</span></p>
+                        <p><strong>Subido por:</strong> ${alumno.digitalizador ? alumno.digitalizador.nombre_display : '—'}</p>
+                        ${alumno.aprobador ? `<p><strong>Aprobado por:</strong> ${alumno.aprobador.nombre_display}</p>` : ''}
+                    </div>
+                `;
+            }
+
+            // ---- Documentos ----
+            const docsList = document.getElementById("docs-list");
+            docsList.innerHTML = "";
+            if (documentos && documentos.length > 0) {
+                documentos.forEach(doc => {
+                    const tipoLabel = doc.tipo === "digitalizador" ? "Registro (Digitalizador)" : "Acta (Aprobación)";
+                    const p = document.createElement("p");
+                    p.className = "mt-2";
+                    p.innerHTML = `
+                    📄 <strong>${tipoLabel}:</strong> ${doc.nombre_original}
+                    <button onclick="descargarDocumento(${doc.id}, '${doc.nombre_original}')"
+                    style="margin-left:10px;">Descargar PDF</button>
+                    `;
+                    docsList.appendChild(p);
+                });
+            } else {
+                docsList.innerHTML = "<p style='color:#888;'>No hay documentos asociados.</p>";
+            }
+
+            // ---- Visibilidad de acciones por rol y estado ----
+            const uploadSection = document.getElementById("upload-section");
+            const accionesAdmin = document.getElementById("acciones-admin");
+            const tipoDocDisplay = document.getElementById("tipo-doc-display");
+
+            // Ocultar todo por defecto
+            uploadSection.classList.add("hidden");
+            uploadSection.style.display = "none";
+            accionesAdmin.classList.add("hidden");
+            accionesAdmin.style.display = "none";
+
+            if (userRole === "digitalizador") {
+                // El digitalizador ya subió su PDF al crear el registro.
+                // Solo puede ver; no puede subir más documentos en esta vista.
+                // (El PDF de registro se sube en el formulario de creación)
+
+            } else if (userRole === "administrativo") {
+                // Puede aprobar SOLO si estado es pendiente y tiene el doc del digitalizador
+                if (alumno.estado === "pendiente") {
+                    const tieneDigitalizador = documentos.some(d => d.tipo === "digitalizador");
+                    const tieneActa = documentos.some(d => d.tipo === "acta");
+
+                    if (!tieneActa) {
+                        // Debe subir su PDF (acta) antes de poder aprobar
+                        tipoDocDisplay.innerText = "📎 Adjuntar acta de aprobación:";
+                        uploadSection._tipoPDF = "acta";
+                        uploadSection.classList.remove("hidden");
+                        uploadSection.style.display = "flex";
+                    }
+
+                    if (tieneDigitalizador && tieneActa) {
+                        // Ya tiene ambos documentos, puede aprobar
+                        accionesAdmin.classList.remove("hidden");
+                        accionesAdmin.style.display = "flex";
+                    }
+                }
+            }
+            // sistemas: solo lectura, sin acciones
+        }
+
+        async function subirDocumento() {
+            const uploadSection = document.getElementById("upload-section");
+            const tipo = uploadSection._tipoPDF;
+            const fileInput = document.getElementById("file-doc");
+            const file = fileInput.files[0];
+            if (!file) return alert("Selecciona un archivo PDF");
+
+            try {
+                await api.documentos.subir(alumnoId, tipo, file);
+                fileInput.value = "";
+                await cargarDetalle();
+            } catch (error) {
+                alert("Error al subir documento: " + error.message);
+            }
+        }
+
+        async function aprobarAlumno() {
+            if (confirm("¿Confirmas la aprobación de este registro?")) {
+                try {
+                    await api.alumnos.aprobar(alumnoId);
+                    alert("Registro aprobado correctamente.");
+                    window.location.href = "alumnos.html";
+                } catch (error) {
+                    alert("Error al aprobar: " + error.message);
+                }
+            }
+        }
+
+        function descargarDocumento(docId, nombre) {
+            const token = localStorage.getItem("access_token");
+
+            fetch(`${API_BASE_URL}/documentos/descargar/${docId}`, {
+                headers: {
+                    "Authorization": `Bearer ${token}`
+                }
+            })
+            .then(res => {
+                if (!res.ok) throw new Error("No autorizado o error al descargar");
+                return res.blob();
+            })
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = nombre;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            })
+            .catch(err => alert(err.message));
+        }
+        cargarDetalle();
+    </script>
+
+    <style>
+        .detalle-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 0.75rem;
+        }
+        .detalle-grid p {
+            background: #f8f9fa;
+            padding: 0.6rem 1rem;
+            border-radius: 6px;
+            border-left: 3px solid var(--accent);
+        }
+    </style>
+</body>
+</html>

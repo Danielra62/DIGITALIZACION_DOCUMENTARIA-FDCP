@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>docuAlumnos - Historial Auditoría</title>
+    <link rel="stylesheet" href="../css/main.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="brand">docuAlumnos</div>
+        <div class="nav-links">
+            <a href="dashboard.html">Dashboard</a>
+            <a href="alumnos.html">Alumnos</a>
+            <a href="usuarios.html">Usuarios</a>
+            <a href="historial.html">Historial</a>
+            <a href="#" onclick="logout()">Cerrar Sesión</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <h1>Historial de Auditoría</h1>
+        <div class="table-container mt-2">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Usuario</th>
+                        <th>Acción</th>
+                        <th>Detalle</th>
+                    </tr>
+                </thead>
+                <tbody id="historial-list">
+                    <!-- Datos dinámicos -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="../js/api.js"></script>
+    <script src="../js/auth.js"></script>
+    <script>
+        async function cargarHistorial() {
+            try {
+                const logs = await api.historial.listar();
+                const list = document.getElementById('historial-list');
+                list.innerHTML = '';
+                logs.forEach(log => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${new Date(log.registrado_en).toLocaleString()}</td>
+                        <td>${log.correo} (${log.tipo_usuario})</td>
+                        <td>${log.accion}</td>
+                        <td>${JSON.stringify(log.detalle)}</td>
+                    `;
+                    list.appendChild(tr);
+                });
+            } catch (error) {
+                alert('No tienes permisos para ver esta sección');
+                window.location.href = 'dashboard.html';
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('access_token');
+            window.location.href = '../index.html';
+        }
+
+        cargarHistorial();
+    </script>
+</body>
+</html>

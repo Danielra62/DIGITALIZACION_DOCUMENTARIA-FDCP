@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>docuAlumnos - Alumnos</title>
+    <link rel="stylesheet" href="../css/main.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="brand">docuAlumnos</div>
+        <div class="nav-links" id="nav-links">
+            <a href="dashboard.html">Dashboard</a>
+            <a href="alumnos.html">Alumnos</a>
+            <a href="#" onclick="auth.logout()">Cerrar Sesión</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="flex" style="justify-content: space-between; align-items: center;">
+            <h1 id="view-title">Alumnos</h1>
+            <button id="btn-nuevo-alumno" class="hidden" style="width: auto; padding: 0.5rem 1rem;">+ Nuevo Alumno</button>
+        </div>
+
+        <div class="table-container mt-2">
+            <table id="tabla-alumnos">
+                <thead id="tabla-head">
+                    <!-- Se construye según el rol -->
+                </thead>
+                <tbody id="alumnos-list">
+                    <tr><td colspan="5" style="text-align:center;">Cargando...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Modal nuevo/editar alumno (solo digitalizador) -->
+    <div id="modal-alumno" class="hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center;">        <div class="login-card" style="max-width: 500px;">
+            <h2 id="modal-title">Nuevo Alumno</h2>
+            <form id="form-alumno">
+                <input type="hidden" id="alumno-id">
+                <div class="form-group">
+                    <label>Código Estudiante</label>
+                    <input type="text" id="codigo" required maxlength="11">
+                </div>
+                <div class="form-group">
+                    <label>Nombres</label>
+                    <input type="text" id="nombres" required>
+                </div>
+                <div class="form-group">
+                    <label>Apellidos</label>
+                    <input type="text" id="apellidos" required>
+                </div>
+                <div class="form-group">
+                    <label>Año Ingreso</label>
+                    <input type="number" id="anio_ingreso" required min="1900" max="2100">
+                </div>
+                <div class="form-group">
+                    <label>Departamento</label>
+                    <input type="text" id="departamento" required>
+                </div>
+                <div class="form-group">
+                    <label>Escuela</label>
+                    <select id="id_escuela" required></select>
+                </div>
+                <div class="form-group">
+                    <label>Archivo PDF <span style="color:var(--danger)">*</span></label>
+                    <input type="file" id="pdf-alumno" accept=".pdf" required>
+                    <small style="color:#888;">Documento inicial obligatorio</small>
+                </div>
+                <div class="flex mt-2">
+                    <button type="submit" id="btn-guardar-alumno">Guardar</button>
+                    <button type="button" class="secondary" onclick="cerrarModal()">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="../js/api.js"></script>
+    <script src="../js/auth.js"></script>
+    <script>
+        let userRole = null;
+
+        async function init() {
+            userRole = await auth.getUserRole();
+
+            if (userRole === "sistemas") {
+                document.getElementById("view-title").innerText = "Auditoría de Alumnos";
+                document.getElementById("tabla-head").innerHTML = `
+                    <tr>
+                        <th>Código</th>
+                        <th>Nombres</th>
+                        <th>Apellidos</th>
+                        <th>Subido por</th>
+                        <th>Aprobado por</th>
+                    </tr>`;
+            } else if (userRole === "digitalizador") {
+                document.getElementById("view-title").innerText = "Mis Registros";
+                document.getElementById("btn-nuevo-alumno").classList.remove("hidden");
+                document.getElementById("tabla-head").innerHTML = `
+                    <tr>
+                        <th>Código</th>
+                        <th>Nombres</th>
+                        <th>Apellidos</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
+                    </tr>`;
+                await cargarEscuelas();
+            } else if (userRole === "administrativo") {
+                document.getElementById("view-title").innerText = "Alumnos Pendientes de Aprobación";
+                document.getElementById("tabla-head").innerHTML = `
+                    <tr>
+                        <th>Código</th>
+                        <th>Nombres</th>
+                        <th>Apellidos</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
+                    </tr>`;
+            } else {
+                // Rol desconocido: solo lectura básica
+                document.getElementById("tabla-head").innerHTML = `
+                    <tr>
+                        <th>Código</th>
+                        <th>Nombres</th>
+                        <th>Apellidos</th>
+                        <th>Estado</th>
+                    </tr>`;
+            }
+
+            await cargarAlumnos();
+        }
+
+        async function cargarEscuelas() {
+            try {
+                const escuelas = await api.escuelas.listar();
+                const select = document.getElementById("id_escuela");
+                select.innerHTML = "";
+                escuelas.forEach(e => {
+                    const opt = document.createElement("option");
+                    opt.value = e.id;
+                    opt.innerText = e.nombre;
+                    select.appendChild(opt);
+                });
+            } catch (error) {
+                console.error("Error al cargar escuelas:", error);
+            }
+        }
+
+        async function cargarAlumnos() {
+            const list = document.getElementById("alumnos-list");
+            try {
+                const alumnos = await api.alumnos.listar();
+                list.innerHTML = "";
+
+                if (!alumnos || alumnos.length === 0) {
+                    const cols = userRole === "sistemas" ? 5 : (["digitalizador","administrativo"].includes(userRole) ? 5 : 4);
+                    list.innerHTML = `<tr><td colspan="${cols}" style="text-align:center; color:#888; padding: 2rem;">No hay registros disponibles.</td></tr>`;
+                    return;
+                }
+
+                alumnos.forEach(alumno => {
+                    const tr = document.createElement("tr");
+
+                    if (userRole === "sistemas") {
+                        // Solo auditoría: código, nombre, apellido, digitalizador, aprobador
+                        tr.innerHTML = `
+                            <td>${alumno.codigo}</td>
+                            <td>${alumno.nombres}</td>
+                            <td>${alumno.apellidos}</td>
+                            <td>${alumno.digitalizador ? alumno.digitalizador.nombre_display : '—'}</td>
+                            <td>${alumno.aprobador ? alumno.aprobador.nombre_display : '—'}</td>
+                        `;
+                    } else if (userRole === "digitalizador") {
+                        // Sus propios alumnos: puede editar si está pendiente
+                        let acciones = `<button onclick="verDetalle(${alumno.id})" class="btn-sm btn-ver">Ver</button>`;
+                        if (alumno.estado === "pendiente" || alumno.estado === "observado") {
+                            acciones += `<button onclick="editarAlumno(${alumno.id})" class="btn-sm btn-editar">Editar</button>`;
+                        }
+                        tr.innerHTML = `
+                            <td>${alumno.codigo}</td>
+                            <td>${alumno.nombres}</td>
+                            <td>${alumno.apellidos}</td>
+                            <td><span class="badge badge-${alumno.estado}">${alumno.estado}</span></td>
+                            <td class="flex">${acciones}</td>
+                        `;
+                    } else if (userRole === "administrativo") {
+                        // Revisar y aprobar
+                        tr.innerHTML = `
+                            <td>${alumno.codigo}</td>
+                            <td>${alumno.nombres}</td>
+                            <td>${alumno.apellidos}</td>
+                            <td><span class="badge badge-${alumno.estado}">${alumno.estado}</span></td>
+                            <td>
+                                <button onclick="verDetalle(${alumno.id})" class="btn-sm btn-aprobar">Revisar y Aprobar</button>
+                            </td>
+                        `;
+                    } else {
+                        tr.innerHTML = `
+                            <td>${alumno.codigo}</td>
+                            <td>${alumno.nombres}</td>
+                            <td>${alumno.apellidos}</td>
+                            <td><span class="badge badge-${alumno.estado}">${alumno.estado}</span></td>
+                        `;
+                    }
+
+                    list.appendChild(tr);
+                });
+
+            } catch (error) {
+                list.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--danger);">Error al cargar alumnos.</td></tr>`;
+                console.error(error);
+            }
+        }
+
+        // --- Modal ---
+        document.getElementById("btn-nuevo-alumno").onclick = async () => {
+            await cargarEscuelas(); // 👈 carga justo antes
+
+            document.getElementById("form-alumno").reset();
+            document.getElementById("alumno-id").value = "";
+            document.getElementById("modal-title").innerText = "Nuevo Alumno";
+            document.getElementById("pdf-alumno").required = true;
+
+            abrirModal();
+        };
+
+        function abrirModal() {
+        const m = document.getElementById("modal-alumno");
+        m.classList.remove("hidden");
+        m.style.display = "flex";
+        }
+
+        function cerrarModal() {
+            const m = document.getElementById("modal-alumno");
+            m.classList.add("hidden");
+            m.style.display = "none";
+        }
+
+        document.getElementById("form-alumno").onsubmit = async (e) => {
+            e.preventDefault();
+            const id = document.getElementById("alumno-id").value;
+            const data = {
+                codigo: document.getElementById("codigo").value,
+                nombres: document.getElementById("nombres").value,
+                apellidos: document.getElementById("apellidos").value,
+                anio_ingreso: parseInt(document.getElementById("anio_ingreso").value),
+                departamento: document.getElementById("departamento").value,
+                id_escuela: parseInt(document.getElementById("id_escuela").value)
+            };
+
+            const btn = document.getElementById("btn-guardar-alumno");
+            btn.disabled = true;
+            btn.innerText = "Guardando...";
+
+            try {
+                let alumnoId = id;
+                if (id) {
+                    await api.alumnos.editar(id, data);
+                } else {
+                    const nuevo = await api.alumnos.crear(data);
+                    alumnoId = nuevo.id;
+                    // Subir PDF inicial (obligatorio para digitalizador)
+                    const file = document.getElementById("pdf-alumno").files[0];
+                    if (file) {
+                        await api.documentos.subir(alumnoId, "digitalizador", file);
+                    }
+                }
+                cerrarModal();
+                cargarAlumnos();
+            } catch (error) {
+                alert("Error: " + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "Guardar";
+            }
+        };
+
+        async function editarAlumno(id) {
+            try {
+                await cargarEscuelas(); 
+                const alumno = await api.alumnos.obtener(id);
+                document.getElementById("alumno-id").value = alumno.id;
+                document.getElementById("codigo").value = alumno.codigo;
+                document.getElementById("nombres").value = alumno.nombres;
+                document.getElementById("apellidos").value = alumno.apellidos;
+                document.getElementById("anio_ingreso").value = alumno.anio_ingreso;
+                document.getElementById("departamento").value = alumno.departamento;
+                document.getElementById("id_escuela").value = alumno.id_escuela;
+                // Al editar no se requiere nuevo PDF
+                document.getElementById("pdf-alumno").required = false;
+                document.getElementById("modal-title").innerText = "Editar Alumno";
+                abrirModal();
+            } catch (error) {
+                alert("Error al cargar datos: " + error.message);
+            }
+        }
+
+        function verDetalle(id) {
+            window.location.href = `alumno_detalle.html?id=${id}`;
+        }
+
+        init();
+    </script>
+
+    <style>
+        .btn-sm {
+            width: auto;
+            padding: 0.25rem 0.75rem;
+            font-size: 0.85rem;
+            border-radius: 4px;
+        }
+        .btn-ver { background-color: var(--accent); }
+        .btn-editar { background-color: var(--secondary); }
+        .btn-aprobar { background-color: var(--success); }
+    </style>
+</body>
+</html>

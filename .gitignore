@@ -22,3 +22,8 @@ Thumbs.db
 # IDEs
 .vscode/
 .idea/
+
+#Data local
+backend/storage/documentos
+deploy/ 
+database/

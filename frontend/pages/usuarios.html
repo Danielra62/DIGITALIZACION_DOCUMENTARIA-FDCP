@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>docuAlumnos - Gestión Usuarios</title>
+    <link rel="stylesheet" href="../css/main.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="brand">docuAlumnos</div>
+        <div class="nav-links">
+            <a href="dashboard.html">Dashboard</a>
+            <a href="alumnos.html">Alumnos</a>
+            <a href="usuarios.html">Usuarios</a>
+            <a href="historial.html">Historial</a>
+            <a href="#" onclick="auth.logout()">Cerrar Sesión</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="flex" style="justify-content: space-between; align-items: center;">
+            <h1>Gestión de Usuarios</h1>
+            <button id="btn-nuevo-usuario" style="width: auto; padding: 0.5rem 1rem;">+ Nuevo Usuario</button>
+        </div>
+
+        <div class="table-container mt-2">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Correo</th>
+                        <th>Rol</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="usuarios-list">
+                    <!-- Datos dinámicos -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Modal Usuario -->
+    <div id="modal-usuario" class="hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;">
+        <div class="login-card">
+            <h3>Nuevo Usuario</h3>
+            <form id="form-usuario">
+                <div class="form-group">
+                    <label>Nombre Display</label>
+                    <input type="text" id="nombre_display" required>
+                </div>
+                <div class="form-group">
+                    <label>Correo Electrónico</label>
+                    <input type="email" id="correo" required>
+                </div>
+                <div class="form-group">
+                    <label>Contraseña</label>
+                    <input type="password" id="password" required>
+                </div>
+                <div class="form-group">
+                    <label>Rol</label>
+                    <select id="rol" required>
+                        <option value="sistemas">Sistemas</option>
+                        <option value="administrativo">Administrativo</option>
+                        <option value="digitalizador">Digitalizador</option>
+                        <option value="usuario">Usuario</option>
+                    </select>
+                </div>
+                <div class="flex mt-2">
+                    <button type="submit">Crear</button>
+                    <button type="button" class="secondary" onclick="cerrarModal()">Cancelar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="../js/api.js"></script>
+    <script src="../js/auth.js"></script>
+    <script>
+        async function cargarUsuarios() {
+            try {
+                const userRole = await auth.getUserRole();
+                if (userRole !== "sistemas") {
+                    alert("No tienes permisos para ver esta sección.");
+                    window.location.href = "dashboard.html";
+                    return;
+                }
+
+                const usuarios = await api.usuarios.listar();
+                const list = document.getElementById("usuarios-list");
+                list.innerHTML = "";
+                usuarios.forEach(user => {
+                    const tr = document.createElement("tr");
+                    tr.innerHTML = `
+                        <td>${user.nombre_display}</td>
+                        <td>${user.correo}</td>
+                        <td>${user.rol.nombre}</td>
+                        <td>-</td>
+                    `;
+                    list.appendChild(tr);
+                });
+            } catch (error) {
+                alert("Error al cargar usuarios: " + error.message);
+                window.location.href = "dashboard.html";
+            }
+        }
+
+        document.getElementById("btn-nuevo-usuario").onclick = () => {
+            document.getElementById("modal-usuario").classList.remove("hidden");
+            document.getElementById("modal-usuario").style.display = "flex";
+        };
+
+        function cerrarModal() {
+            document.getElementById("modal-usuario").classList.add("hidden");
+            document.getElementById("modal-usuario").style.display = "none";
+        }
+
+        document.getElementById("form-usuario").onsubmit = async (e) => {
+            e.preventDefault();
+            const data = {
+                nombre_display: document.getElementById("nombre_display").value,
+                correo: document.getElementById("correo").value,
+                password: document.getElementById("password").value,
+                rol: document.getElementById("rol").value
+            };
+
+            try {
+                await api.usuarios.crear(data);
+                alert("Usuario creado");
+                cerrarModal();
+                cargarUsuarios();
+            } catch (error) {
+                alert("Error: " + error.message);
+            }
+        };
+
+        cargarUsuarios();
+    </script>
+</body>
+</html>

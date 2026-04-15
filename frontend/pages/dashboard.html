@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>docuAlumnos - Dashboard</title>
+    <link rel="stylesheet" href="../css/main.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="brand">docuAlumnos</div>
+        <div class="nav-links" id="nav-links">
+            <a href="dashboard.html">Dashboard</a>
+            <a href="alumnos.html" id="nav-alumnos">Alumnos</a>
+            <a href="usuarios.html" id="nav-usuarios" class="hidden">Usuarios</a>
+            <a href="historial.html" id="nav-historial" class="hidden">Historial</a>
+            <a href="#" onclick="auth.logout()">Cerrar Sesión</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <h1 id="bienvenida">Bienvenido</h1>
+        <p id="descripcion-rol" class="mt-2" style="color:#666;"></p>
+
+        <div class="mt-2" id="cards-acceso" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:1.5rem;">
+            <!-- Se construye según el rol -->
+        </div>
+    </div>
+
+    <script src="../js/api.js"></script>
+    <script src="../js/auth.js"></script>
+    <script>
+        async function setupDashboard() {
+            const userRole = await auth.getUserRole();
+            const cards = document.getElementById("cards-acceso");
+            const desc = document.getElementById("descripcion-rol");
+
+            if (userRole === "sistemas") {
+                document.getElementById("nav-usuarios").classList.remove("hidden");
+                document.getElementById("nav-historial").classList.remove("hidden");
+                document.getElementById("bienvenida").innerText = "Panel de Sistemas";
+                desc.innerText = "Gestión de usuarios y auditoría del sistema.";
+                cards.innerHTML = `
+                    <a href="alumnos.html" class="dash-card">
+                        <div class="dash-icon">📋</div>
+                        <div class="dash-label">Auditoría de Alumnos</div>
+                    </a>
+                    <a href="usuarios.html" class="dash-card">
+                        <div class="dash-icon">👥</div>
+                        <div class="dash-label">Gestión de Usuarios</div>
+                    </a>
+                    <a href="historial.html" class="dash-card">
+                        <div class="dash-icon">🗂</div>
+                        <div class="dash-label">Historial de Auditoría</div>
+                    </a>
+                `;
+            } else if (userRole === "digitalizador") {
+                document.getElementById("bienvenida").innerText = "Panel de Digitalizador";
+                desc.innerText = "Registra nuevos alumnos y sube sus documentos iniciales.";
+                cards.innerHTML = `
+                    <a href="alumnos.html" class="dash-card">
+                        <div class="dash-icon">📝</div>
+                        <div class="dash-label">Mis Registros</div>
+                    </a>
+                `;
+            } else if (userRole === "administrativo") {
+                document.getElementById("bienvenida").innerText = "Panel Administrativo";
+                desc.innerText = "Revisa y aprueba los registros de alumnos pendientes.";
+                cards.innerHTML = `
+                    <a href="alumnos.html" class="dash-card">
+                        <div class="dash-icon">✅</div>
+                        <div class="dash-label">Alumnos por Aprobar</div>
+                    </a>
+                `;
+            } else {
+                document.getElementById("bienvenida").innerText = "Bienvenido al Sistema";
+                desc.innerText = "No tienes acciones disponibles con tu rol actual.";
+            }
+        }
+
+        setupDashboard();
+    </script>
+
+    <style>
+        .dash-card {
+            background: white;
+            border-radius: 10px;
+            padding: 2rem 1.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+            text-decoration: none;
+            color: var(--text);
+            text-align: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: block;
+        }
+        .dash-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+        }
+        .dash-icon { font-size: 2.5rem; margin-bottom: 0.75rem; }
+        .dash-label { font-weight: 600; color: var(--primary); font-size: 1rem; }
+    </style>
+</body>
+</html>
