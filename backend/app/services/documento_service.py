@@ -35,8 +35,12 @@ def guardar_documento(db: Session, alumno_id: int, file: UploadFile, tipo: str, 
         if alumno.id_digitalizador != user.id:
             raise HTTPException(status_code=403, detail="No autorizado")
 
-        if alumno.estado != "pendiente":
-            raise HTTPException(status_code=400, detail="Solo en pendiente")
+        if alumno.estado not in ["pendiente", "observado"]:
+            raise HTTPException(status_code=400, detail="Solo en pendiente u observado")
+
+        # 🔥 si estaba observado, vuelve a pendiente
+        if alumno.estado == "observado":
+            alumno.estado = "pendiente"
 
     # =========================
     # 📌 ADMINISTRATIVO
@@ -132,3 +136,38 @@ def obtener_documentos_alumno(db: Session, alumno_id: int, user):
         raise HTTPException(status_code=403, detail="No autorizado para ver documentos de este alumno (solo aprobados)")
 
     return db.query(Documento).filter(Documento.id_alumno == alumno_id).all()
+
+def observar_alumno_service(db: Session, alumno_id: int, motivo: str, user):
+
+    alumno = db.query(Alumno).filter(
+        Alumno.id == alumno_id,
+        Alumno.eliminado == False
+    ).first()
+
+    if not alumno:
+        raise HTTPException(404, "Alumno no encontrado")
+
+    # 🔒 Solo administrativo
+    if user.rol.nombre != "administrativo":
+        raise HTTPException(403, "No autorizado")
+
+    # 🔒 Solo si está en revisión (pendiente)
+    if alumno.estado != "pendiente":
+        raise HTTPException(400, "Solo se puede observar en estado pendiente")
+
+    # 🔥 CAMBIO DE ESTADO
+    alumno.estado = "observado"
+
+    db.commit()
+    db.refresh(alumno)
+
+    # 🧾 HISTORIAL
+    registrar_historial(
+        db,
+        user,
+        "SUBSANAR_OBSERVACION",
+        alumno.id,
+        {"comentario": "Se corrigió la observación"}
+    )
+
+    return alumno

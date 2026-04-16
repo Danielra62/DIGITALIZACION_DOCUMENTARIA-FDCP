@@ -109,5 +109,19 @@ const api = {
 
     escuelas: {
         listar: () => api.fetch('/escuelas/')
+    },
+
+    observar: async (id, motivo) => {
+        return fetch(`${API_BASE_URL}/alumnos/${id}/observar`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${localStorage.getItem("access_token")}`
+            },
+            body: JSON.stringify({ motivo })
+        }).then(res => {
+            if (!res.ok) throw new Error("Error al observar alumno");
+            return res.json();
+        });
     }
 };

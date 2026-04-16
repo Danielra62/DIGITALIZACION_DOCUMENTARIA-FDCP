@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.services.documento_service import guardar_documento
+from app.services.documento_service import observar_alumno_service
 from app.models.documento import Documento
 from fastapi.responses import FileResponse
 import os
@@ -49,7 +50,12 @@ def descargar(doc_id: int, db: Session = Depends(get_db), user=Depends(get_curre
         raise HTTPException(404, "Documento no encontrado")
     
     return FileResponse(
-    doc.ruta_archivo,
-    filename=os.path.basename(doc.ruta_archivo),
-    media_type="application/pdf"
-)
+        path=doc.ruta_archivo,
+        filename=doc.nombre_original,
+        media_type="application/pdf"
+    )
+
+
+@router.put("/alumnos/{alumno_id}/observar")
+def observar_alumno(alumno_id: int, motivo: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    return observar_alumno_service(db, alumno_id, motivo, user)

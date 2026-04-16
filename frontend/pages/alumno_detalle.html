@@ -33,13 +33,18 @@
                 <div id="tipo-doc-display" style="font-weight:600; color:var(--secondary);"></div>
                 <input type="file" id="file-doc" accept=".pdf" style="flex:1;">
                 <button onclick="subirDocumento()" style="width:auto; padding:0.5rem 1.5rem;">Subir PDF</button>
+                <button onclick="mostrarModalObservacion()" style="background-color: #ffc107; color:#000;"> ⚠ OBSERVAR</button>
             </div>
         </div>
 
         <!-- Acciones administrativo: SOLO administrativo, SOLO si estado es pendiente -->
         <div id="acciones-admin" class="hidden mt-2" style="justify-content: center; gap: 1rem; display:none;">
             <button onclick="aprobarAlumno()" style="background-color: var(--success); width: auto; padding: 1rem 2rem;">✔ APROBAR REGISTRO</button>
+             <button onclick="mostrarModalObservacion()" style="background-color: #ffc107; color:#000;"> ⚠ OBSERVAR</button>
         </div>
+
+
+        
     </div>
 
     <script src="../js/api.js"></script>
@@ -94,6 +99,12 @@
                         <p><strong>Estado:</strong> <span class="badge badge-${alumno.estado}">${alumno.estado}</span></p>
                         <p><strong>Subido por:</strong> ${alumno.digitalizador ? alumno.digitalizador.nombre_display : '—'}</p>
                         ${alumno.aprobador ? `<p><strong>Aprobado por:</strong> ${alumno.aprobador.nombre_display}</p>` : ''}
+                        
+                        ${alumno.observacion ? `
+                        <p style="background:#fff3cd; padding:10px; border-left:4px solid orange;">
+                            <strong>⚠ Observación:</strong> ${alumno.observacion}
+                        </p>
+                        ` : ''}
                     </div>
                 `;
             }
@@ -114,6 +125,9 @@
                     👁 Ver
                     </button>
 
+                    <button onclick="descargarDocumento(${doc.id})" style="margin-left:5px;">
+                    ⬇ Descargar
+                    </button>
                     `;
                     docsList.appendChild(p);
                 });
@@ -177,6 +191,24 @@
             }
         }
 
+        function mostrarModalObservacion() {
+            const motivo = prompt("Ingrese el motivo de la observación:");
+            if (!motivo) return;
+
+            observarAlumno(motivo);
+        }
+
+
+        async function observarAlumno(motivo) {
+            try {
+                await api.alumnos.observar(alumnoId, motivo);
+                alert("Alumno marcado como observado.");
+                await cargarDetalle(); // refresca vista
+            } catch (error) {
+                alert("Error: " + error.message);
+            }
+        }
+
         function verDocumento(docId) {
             const token = localStorage.getItem("access_token");
 
@@ -208,7 +240,40 @@
             }
         }
 
+    function descargarDocumento(docId) {
+        const token = localStorage.getItem("access_token");
 
+        const url = `${API_BASE_URL}/documentos/descargar/${docId}`;
+
+        fetch(url, {
+            headers: {
+                "Authorization": `Bearer ${token}`
+            }
+        })
+        .then(res => {
+            if (!res.ok) throw new Error("Error al descargar");
+
+            // 🔥 obtener nombre desde headers
+            const disposition = res.headers.get("Content-Disposition");
+            let nombre = "archivo.pdf";
+
+            if (disposition && disposition.includes("filename=")) {
+                nombre = disposition.split("filename=")[1].replace(/"/g, "");
+            }
+
+            return res.blob().then(blob => ({ blob, nombre }));
+        })
+        .then(({ blob, nombre }) => {
+            const urlBlob = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = urlBlob;
+            a.download = nombre; // 🔥 ahora sí correcto
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+        })
+        .catch(err => alert(err.message));
+    }
         cargarDetalle();
     </script>
 

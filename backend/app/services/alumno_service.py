@@ -49,21 +49,37 @@ def obtener_alumno_por_id(db: Session, alumno_id: int, user):
     alumno = db.query(Alumno).options(
         joinedload(Alumno.escuela), 
         joinedload(Alumno.digitalizador), 
-        joinedload(Alumno.aprobador)
-    ).filter(Alumno.id == alumno_id, Alumno.eliminado == False).first()
+        joinedload(Alumno.aprobador),
+        joinedload(Alumno.observaciones)  # 👈 IMPORTANTE
+    ).filter(
+        Alumno.id == alumno_id,
+        Alumno.eliminado == False
+    ).first()
     
     if not alumno:
         raise HTTPException(status_code=404, detail="Alumno no encontrado")
     
-    # Validaciones de visibilidad por rol
-    if user.rol.nombre == "digitalizador" and alumno.id_digitalizador != user.id:
-        raise HTTPException(status_code=403, detail="No autorizado para ver este alumno")
-    
-    if user.rol.nombre == "administrativo" and alumno.estado != "pendiente":
-        # El administrativo puede ver el detalle si está pendiente para aprobar
-        pass
+    # 🔥 obtener observación activa
+    observacion_activa = next(
+        (o for o in alumno.observaciones if o.activa),
+        None
+    )
 
-    return alumno
+    return {
+        "id": alumno.id,
+        "codigo": alumno.codigo,
+        "nombres": alumno.nombres,
+        "apellidos": alumno.apellidos,
+        "estado": alumno.estado,
+        "observacion": observacion_activa.comentario if observacion_activa else None,
+
+        # 👇 incluye lo que ya usas en frontend
+        "anio_ingreso": alumno.anio_ingreso,
+        "departamento": alumno.departamento,
+        "escuela": alumno.escuela,
+        "digitalizador": alumno.digitalizador,
+        "aprobador": alumno.aprobador
+    }
 
 def editar_alumno(db: Session, alumno_id: int, data, user):
     alumno = obtener_alumno_por_id(db, alumno_id, user)
@@ -92,14 +108,40 @@ def eliminar_alumno(db: Session, alumno_id: int, user):
 
 def observar_alumno(db: Session, alumno_id: int, comentario: str, user):
     alumno = obtener_alumno_por_id(db, alumno_id, user)
+
     if user.rol.nombre != "administrativo":
         raise HTTPException(403, "Solo administrativos pueden observar")
 
+    if alumno.estado == "aprobado":
+        raise HTTPException(400, "No se puede observar un alumno aprobado")
+
+    # Cambiar estado
     alumno.estado = "observado"
-    obs = Observacion(id_alumno=alumno.id, comentario=comentario, creado_por=user.id)
+
+    # Desactivar observaciones anteriores
+    db.query(Observacion).filter(
+        Observacion.id_alumno == alumno.id,
+        Observacion.activa == True
+    ).update({"activa": False})
+
+    # Crear nueva observación
+    obs = Observacion(
+        id_alumno=alumno.id,
+        comentario=comentario,
+        id_creado_por=user.id
+    )
+
     db.add(obs)
     db.commit()
-    registrar_historial(db, user, "OBSERVAR_ALUMNO", alumno.id, {"comentario": comentario})
+
+    registrar_historial(
+        db,
+        user,
+        "OBSERVAR_ALUMNO",
+        alumno.id,
+        {"comentario": comentario}
+    )
+
     return alumno
 
 def aprobar_alumno(db: Session, alumno_id: int, user):
