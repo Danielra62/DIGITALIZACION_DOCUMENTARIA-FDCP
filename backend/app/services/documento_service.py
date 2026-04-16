@@ -7,87 +7,117 @@ from app.services.historial_service import registrar_historial
 import os
 
 def guardar_documento(db: Session, alumno_id: int, file: UploadFile, tipo: str, user):
-    alumno = db.query(Alumno).filter(Alumno.id == alumno_id, Alumno.eliminado == False).first()
+
+    alumno = db.query(Alumno).filter(
+        Alumno.id == alumno_id,
+        Alumno.eliminado == False
+    ).first()
+
     if not alumno:
         raise HTTPException(status_code=404, detail="Alumno no encontrado")
 
-    # Validar rol para subir documentos
-    if user.rol.nombre == "digitalizador" and tipo != "digitalizador":
-        raise HTTPException(status_code=403, detail="Digitalizadores solo pueden subir documentos de tipo 'digitalizador'")
-    
-    if user.rol.nombre == "administrativo" and tipo != "acta":
-        raise HTTPException(status_code=403, detail="Administrativos solo pueden subir documentos de tipo 'acta'")
-    
-    if user.rol.nombre == "sistemas" or user.rol.nombre == "usuario":
-        raise HTTPException(status_code=403, detail="Rol no autorizado para subir documentos")
-
-    # Validar extensión PDF
+    # 🔒 Validar PDF
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF")
 
-    # Contar documentos existentes para el alumno
-    documentos_existentes = db.query(Documento).filter(Documento.id_alumno == alumno_id).count()
+    # 🔒 Validar roles
+    if user.rol.nombre in ["sistemas", "usuario"]:
+        raise HTTPException(status_code=403, detail="Rol no autorizado")
 
+    # =========================
+    # 📌 DIGITALIZADOR
+    # =========================
     if user.rol.nombre == "digitalizador":
-        doc_existente = db.query(Documento).filter(
+
+        if tipo != "digitalizador":
+            raise HTTPException(status_code=403, detail="Solo tipo digitalizador")
+
+        if alumno.id_digitalizador != user.id:
+            raise HTTPException(status_code=403, detail="No autorizado")
+
+        if alumno.estado != "pendiente":
+            raise HTTPException(status_code=400, detail="Solo en pendiente")
+
+    # =========================
+    # 📌 ADMINISTRATIVO
+    # =========================
+    elif user.rol.nombre == "administrativo":
+
+        if tipo != "acta":
+            raise HTTPException(status_code=403, detail="Solo tipo acta")
+
+        if alumno.estado != "pendiente":
+            raise HTTPException(status_code=400, detail="Solo en pendiente")
+
+        # Debe existir documento del digitalizador
+        doc_digitalizador = db.query(Documento).filter(
             Documento.id_alumno == alumno_id,
             Documento.tipo == "digitalizador"
         ).first()
 
-        # ❌ Bloquear SOLO si intenta crear otro distinto (no reemplazar)
-        if doc_existente and tipo != "digitalizador":
-            raise HTTPException(status_code=400, detail="Tipo de documento inválido.")
+        if not doc_digitalizador:
+            raise HTTPException(400, "Debe existir documento del digitalizador")
 
-        # ✔ Validaciones existentes
-        if alumno.id_digitalizador != user.id:
-            raise HTTPException(status_code=403, detail="No autorizado para subir documentos a este alumno")
+        # Evitar duplicado de acta
+        doc_acta = db.query(Documento).filter(
+            Documento.id_alumno == alumno_id,
+            Documento.tipo == "acta"
+        ).first()
 
-        if alumno.estado != "pendiente":
-            raise HTTPException(status_code=400, detail="Solo se pueden subir documentos a alumnos en estado pendiente")
-        elif user.rol.nombre == "administrativo":
-            if documentos_existentes >= 2:
-                raise HTTPException(status_code=400, detail="Ya existen dos documentos para este alumno. No se pueden subir más.")
-            # Asegurarse de que el administrativo sube el acta para un alumno pendiente
-            if alumno.estado != "pendiente":
-                raise HTTPException(status_code=400, detail="Solo se pueden subir actas a alumnos en estado pendiente")
+        if doc_acta:
+            raise HTTPException(400, "El acta ya existe")
 
-        # Guardar archivo físicamente
-        ruta_guardado = guardar_archivo(alumno_id, file, tipo)
+    # =========================
+    # 🧠 GENERAR NOMBRE (ANTES DE TODO)
+    # =========================
+    nombre_estandarizado = f"{'REG' if tipo == 'digitalizador' else 'ACT'}-{alumno.codigo}.pdf"
 
-        # Crear o actualizar registro de documento en DB
-        doc = db.query(Documento).filter(Documento.id_alumno == alumno_id, Documento.tipo == tipo).first()
-        if doc:
-            # 🧹 eliminar archivo anterior
-            if os.path.exists(doc.ruta_archivo):
-                os.remove(doc.ruta_archivo)
+    # =========================
+    # 📁 GUARDAR ARCHIVO
+    # =========================
+    ruta_guardado = guardar_archivo(alumno, file, tipo, nombre_estandarizado)
 
-            doc.ruta_archivo = ruta_guardado
-            doc.nombre_original = file.filename
-            doc.tamanio_bytes = file.size
-            doc.subido_por = user.id
-        else:
-            doc = Documento(
-                id_alumno=alumno_id,
-                tipo=tipo,
-                ruta_archivo=ruta_guardado,
-                nombre_original=file.filename,
-                tamanio_bytes=file.size,
-                subido_por=user.id
-            )
-            db.add(doc)
-        
-        db.commit()
-        db.refresh(doc)
+    # =========================
+    # 💾 DB
+    # =========================
+    doc = db.query(Documento).filter(
+        Documento.id_alumno == alumno_id,
+        Documento.tipo == tipo
+    ).first()
 
-        registrar_historial(
-            db, user,
-            "SUBIR_DOCUMENTO",
-            alumno.id,
-            {"tipo": tipo, "nombre_archivo": file.filename}
+    ruta_guardado = guardar_archivo(alumno, file, tipo, nombre_estandarizado)
+
+    if doc:
+        doc.ruta_archivo = ruta_guardado
+        doc.nombre_original = nombre_estandarizado
+        doc.tamanio_bytes = file.size
+        doc.subido_por = user.id
+    else:
+        doc = Documento(
+            id_alumno=alumno_id,
+            tipo=tipo,
+            ruta_archivo=ruta_guardado,
+            nombre_original=nombre_estandarizado,
+            tamanio_bytes=file.size,
+            subido_por=user.id
         )
+        db.add(doc)
 
-        return doc
+    db.commit()
+    db.refresh(doc)
 
+    registrar_historial(
+        db,
+        user,
+        "SUBIR_DOCUMENTO",
+        alumno.id,
+        {
+            "tipo": tipo,
+            "nombre_archivo": nombre_estandarizado  # 🔥 ya no uses file.filename
+        }
+    )
+
+    return doc
 
 def obtener_documentos_alumno(db: Session, alumno_id: int, user):
     alumno = db.query(Alumno).filter(Alumno.id == alumno_id, Alumno.eliminado == False).first()

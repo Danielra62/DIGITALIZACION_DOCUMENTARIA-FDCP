@@ -106,10 +106,14 @@
                     const tipoLabel = doc.tipo === "digitalizador" ? "Registro (Digitalizador)" : "Acta (Aprobación)";
                     const p = document.createElement("p");
                     p.className = "mt-2";
+
                     p.innerHTML = `
-                    📄 <strong>${tipoLabel}:</strong> ${doc.nombre_original}
-                    <button onclick="descargarDocumento(${doc.id}, '${doc.nombre_original}')"
-                    style="margin-left:10px;">Descargar PDF</button>
+                    📄 <strong>${tipoLabel}:</strong> ${doc.tipo === "digitalizador" ? "REG-" : "ACT-"}${alumno.codigo}.pdf
+
+                    <button onclick="verDocumento(${doc.id})" style="margin-left:10px;">
+                    👁 Ver
+                    </button>
+
                     `;
                     docsList.appendChild(p);
                 });
@@ -173,6 +177,25 @@
             }
         }
 
+        function verDocumento(docId) {
+            const token = localStorage.getItem("access_token");
+
+            fetch(`${API_BASE_URL}/documentos/ver/${docId}`, {
+                headers: {
+                    "Authorization": `Bearer ${token}`
+                }
+            })
+            .then(res => {
+                if (!res.ok) throw new Error("Error al abrir PDF");
+                return res.blob();
+            })
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                window.open(url, "_blank"); // 👁 abre en pestaña
+            })
+            .catch(err => alert(err.message));
+        }
+
         async function aprobarAlumno() {
             if (confirm("¿Confirmas la aprobación de este registro?")) {
                 try {
@@ -185,29 +208,7 @@
             }
         }
 
-        function descargarDocumento(docId, nombre) {
-            const token = localStorage.getItem("access_token");
 
-            fetch(`${API_BASE_URL}/documentos/descargar/${docId}`, {
-                headers: {
-                    "Authorization": `Bearer ${token}`
-                }
-            })
-            .then(res => {
-                if (!res.ok) throw new Error("No autorizado o error al descargar");
-                return res.blob();
-            })
-            .then(blob => {
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = nombre;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-            })
-            .catch(err => alert(err.message));
-        }
         cargarDetalle();
     </script>
 

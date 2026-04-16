@@ -2,13 +2,21 @@ import os
 
 STORAGE_PATH = "storage"
 
-def guardar_archivo(alumno_id, file, tipo):
-    folder = f"{STORAGE_PATH}/documentos/{alumno_id}"
-    os.makedirs(folder, exist_ok=True)
+def guardar_archivo(alumno, file, tipo, nombre_archivo):
+    carpeta = f"storage/documentos/{alumno.id}"
+    os.makedirs(carpeta, exist_ok=True)
 
-    filepath = f"{folder}/{tipo}.pdf"
+    ruta = os.path.join(carpeta, nombre_archivo)
 
-    with open(filepath, "wb") as f:
-        f.write(file.file.read())
+    # 🧹 eliminar si existe
+    if os.path.exists(ruta):
+        os.remove(ruta)
 
-    return filepath
+    # 🔥 IMPORTANTE: resetear puntero
+    file.file.seek(0)
+
+    # Guardar archivo
+    with open(ruta, "wb") as buffer:
+        buffer.write(file.file.read())
+
+    return ruta

@@ -4,6 +4,8 @@ from app.database import get_db
 from app.dependencies import get_current_user
 from app.services.documento_service import guardar_documento
 from app.models.documento import Documento
+from fastapi.responses import FileResponse
+import os
 
 router = APIRouter(prefix="/documentos", tags=["Documentos"])
 
@@ -20,6 +22,24 @@ def listar_por_alumno(alumno_id: int, db: Session = Depends(get_db), user=Depend
     docs = db.query(Documento).options(joinedload(Documento.subidor)).filter(Documento.id_alumno == alumno_id).all()
     return docs
 
+@router.get("/ver/{doc_id}")
+def ver_documento(doc_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    doc = db.query(Documento).filter(Documento.id == doc_id).first()
+
+    if not doc:
+        raise HTTPException(404, "Documento no encontrado")
+
+    if not os.path.exists(doc.ruta_archivo):
+        raise HTTPException(404, "Archivo no encontrado en el servidor")
+
+    return FileResponse(
+        doc.ruta_archivo,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"inline; filename={os.path.basename(doc.ruta_archivo)}"
+        }
+    )
+
 @router.get("/descargar/{doc_id}")
 def descargar(doc_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
     # Aquí iría la lógica para servir el archivo físico con FileResponse
@@ -28,5 +48,8 @@ def descargar(doc_id: int, db: Session = Depends(get_db), user=Depends(get_curre
     if not doc:
         raise HTTPException(404, "Documento no encontrado")
     
-    from fastapi.responses import FileResponse
-    return FileResponse(doc.ruta_archivo, filename=doc.nombre_original)
+    return FileResponse(
+    doc.ruta_archivo,
+    filename=os.path.basename(doc.ruta_archivo),
+    media_type="application/pdf"
+)
