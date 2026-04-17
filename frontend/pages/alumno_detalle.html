@@ -172,6 +172,13 @@
                     }
                 }
             }
+            else if (userRole === "usuario") {
+                // Solo lectura
+                // No mostrar subida ni acciones admin
+                uploadSection.style.display = "none";
+                accionesAdmin.style.display = "none";
+            }
+                        
             // sistemas: solo lectura, sin acciones
         }
 

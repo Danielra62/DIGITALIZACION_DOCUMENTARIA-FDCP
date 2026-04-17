@@ -1,15 +1,64 @@
 from sqlalchemy.orm import Session, joinedload
 from fastapi import HTTPException
+from sqlalchemy.sql import func
+
 from app.models.alumno import Alumno
 from app.models.observacion import Observacion
 from app.models.documento import Documento
+from app.models.historial import Historial
 from app.services.historial_service import registrar_historial
-from sqlalchemy.sql import func
+
+
+# ===============================
+# 🔥 HELPERS INTERNOS
+# ===============================
+
+def _get_alumno_model(db: Session, alumno_id: int):
+    alumno = db.query(Alumno).options(
+        joinedload(Alumno.escuela),
+        joinedload(Alumno.digitalizador),
+        joinedload(Alumno.aprobador),
+        joinedload(Alumno.observaciones)
+    ).filter(
+        Alumno.id == alumno_id,
+        Alumno.eliminado == False
+    ).first()
+
+    if not alumno:
+        raise HTTPException(status_code=404, detail="Alumno no encontrado")
+
+    return alumno
+
+
+def _build_alumno_response(alumno: Alumno):
+    observacion_activa = next(
+        (o for o in alumno.observaciones if o.activa),
+        None
+    )
+
+    return {
+        "id": alumno.id,
+        "codigo": alumno.codigo,
+        "nombres": alumno.nombres,
+        "apellidos": alumno.apellidos,
+        "estado": alumno.estado,
+        "observacion": observacion_activa.comentario if observacion_activa else None,
+        "anio_ingreso": alumno.anio_ingreso,
+        "departamento": alumno.departamento,
+        "escuela": alumno.escuela,
+        "digitalizador": alumno.digitalizador,
+        "aprobador": alumno.aprobador
+    }
+
+
+# ===============================
+# 🚀 CRUD
+# ===============================
 
 def crear_alumno(db: Session, data, user):
     if user.rol.nombre != "digitalizador":
-        raise HTTPException(status_code=403, detail="Solo los digitalizadores pueden crear alumnos")
-    
+        raise HTTPException(403, "Solo los digitalizadores pueden crear alumnos")
+
     alumno = Alumno(
         codigo=data.codigo,
         nombres=data.nombres.upper(),
@@ -28,11 +77,11 @@ def crear_alumno(db: Session, data, user):
     registrar_historial(db, user, "CREAR_ALUMNO", alumno.id, {"codigo": alumno.codigo})
     return alumno
 
+
 def listar_alumnos(db: Session, user):
     query = db.query(Alumno).filter(Alumno.eliminado == False)
 
     if user.rol.nombre == "sistemas":
-        # Sistemas ve todo
         pass
     elif user.rol.nombre == "digitalizador":
         query = query.filter(Alumno.id_digitalizador == user.id)
@@ -41,73 +90,95 @@ def listar_alumnos(db: Session, user):
     elif user.rol.nombre == "usuario":
         query = query.filter(Alumno.estado == "aprobado")
     else:
-        raise HTTPException(status_code=403, detail="Rol no autorizado")
+        raise HTTPException(403, "Rol no autorizado")
 
-    return query.options(joinedload(Alumno.escuela), joinedload(Alumno.digitalizador), joinedload(Alumno.aprobador)).all()
+    alumnos = query.options(
+        joinedload(Alumno.escuela),
+        joinedload(Alumno.digitalizador),
+        joinedload(Alumno.aprobador)
+    ).all()
+
+    return [
+        {
+            "id": a.id,
+            "codigo": a.codigo,
+            "nombres": a.nombres,
+            "apellidos": a.apellidos,
+            "estado": a.estado,
+            "creado_en": a.creado_en,
+            "aprobado_en": a.aprobado_en,
+            "digitalizador": a.digitalizador,
+            "aprobador": a.aprobador
+        }
+        for a in alumnos
+    ]
+
 
 def obtener_alumno_por_id(db: Session, alumno_id: int, user):
-    alumno = db.query(Alumno).options(
-        joinedload(Alumno.escuela), 
-        joinedload(Alumno.digitalizador), 
-        joinedload(Alumno.aprobador),
-        joinedload(Alumno.observaciones)  # 👈 IMPORTANTE
-    ).filter(
-        Alumno.id == alumno_id,
-        Alumno.eliminado == False
-    ).first()
-    
-    if not alumno:
-        raise HTTPException(status_code=404, detail="Alumno no encontrado")
-    
-    # 🔥 obtener observación activa
-    observacion_activa = next(
-        (o for o in alumno.observaciones if o.activa),
-        None
-    )
+    alumno = _get_alumno_model(db, alumno_id)
 
-    return {
-        "id": alumno.id,
-        "codigo": alumno.codigo,
-        "nombres": alumno.nombres,
-        "apellidos": alumno.apellidos,
-        "estado": alumno.estado,
-        "observacion": observacion_activa.comentario if observacion_activa else None,
+    # 🔐 control acceso
+    if user.rol.nombre == "digitalizador" and alumno.id_digitalizador != user.id:
+        raise HTTPException(403, "No autorizado")
 
-        # 👇 incluye lo que ya usas en frontend
-        "anio_ingreso": alumno.anio_ingreso,
-        "departamento": alumno.departamento,
-        "escuela": alumno.escuela,
-        "digitalizador": alumno.digitalizador,
-        "aprobador": alumno.aprobador
-    }
+    if user.rol.nombre == "usuario" and alumno.estado != "aprobado":
+        raise HTTPException(403, "No autorizado")
+
+    return _build_alumno_response(alumno)
+
 
 def editar_alumno(db: Session, alumno_id: int, data, user):
-    alumno = obtener_alumno_por_id(db, alumno_id, user)
-    
-    if alumno.estado == "aprobado":
-        raise HTTPException(status_code=400, detail="No se puede editar un registro aprobado")
+    alumno = _get_alumno_model(db, alumno_id)
 
+    if alumno.estado == "aprobado":
+        raise HTTPException(400, "No se puede editar un registro aprobado")
+
+    # 🔥 actualizar campos
     for key, value in data.dict(exclude_unset=True).items():
         setattr(alumno, key, value)
 
+    # 🔥 SUBSANACIÓN AUTOMÁTICA
+    db.query(Observacion).filter(
+        Observacion.id_alumno == alumno.id,
+        Observacion.activa == True
+    ).update({"activa": False})
+
+    # 🔥 eliminar historial de observación
+    db.query(Historial).filter(
+        Historial.id_alumno == alumno.id,
+        Historial.accion == "OBSERVAR_ALUMNO"
+    ).delete()
+
+    # 🔥 volver a pendiente si estaba observado
+    if alumno.estado == "observado":
+        alumno.estado = "pendiente"
+
     db.commit()
     db.refresh(alumno)
+
     registrar_historial(db, user, "EDITAR_ALUMNO", alumno.id)
     return alumno
 
+
 def eliminar_alumno(db: Session, alumno_id: int, user):
-    alumno = obtener_alumno_por_id(db, alumno_id, user)
-    
+    alumno = _get_alumno_model(db, alumno_id)
+
     if alumno.estado == "aprobado":
-        raise HTTPException(status_code=400, detail="No se puede eliminar un registro aprobado")
+        raise HTTPException(400, "No se puede eliminar un registro aprobado")
 
     alumno.eliminado = True
     db.commit()
+
     registrar_historial(db, user, "ELIMINAR_ALUMNO", alumno.id)
     return {"ok": True}
 
+
+# ===============================
+# 🔍 FLUJO DE APROBACIÓN
+# ===============================
+
 def observar_alumno(db: Session, alumno_id: int, comentario: str, user):
-    alumno = obtener_alumno_por_id(db, alumno_id, user)
+    alumno = _get_alumno_model(db, alumno_id)
 
     if user.rol.nombre != "administrativo":
         raise HTTPException(403, "Solo administrativos pueden observar")
@@ -115,16 +186,16 @@ def observar_alumno(db: Session, alumno_id: int, comentario: str, user):
     if alumno.estado == "aprobado":
         raise HTTPException(400, "No se puede observar un alumno aprobado")
 
-    # Cambiar estado
+    # cambiar estado
     alumno.estado = "observado"
 
-    # Desactivar observaciones anteriores
+    # desactivar anteriores
     db.query(Observacion).filter(
         Observacion.id_alumno == alumno.id,
         Observacion.activa == True
     ).update({"activa": False})
 
-    # Crear nueva observación
+    # nueva observación
     obs = Observacion(
         id_alumno=alumno.id,
         comentario=comentario,
@@ -144,19 +215,27 @@ def observar_alumno(db: Session, alumno_id: int, comentario: str, user):
 
     return alumno
 
+
 def aprobar_alumno(db: Session, alumno_id: int, user):
-    alumno = obtener_alumno_por_id(db, alumno_id, user)
+    alumno = _get_alumno_model(db, alumno_id)
+
     if user.rol.nombre != "administrativo":
         raise HTTPException(403, "Solo administrativos pueden aprobar")
 
-    # Verificar que exista el acta
-    acta = db.query(Documento).filter(Documento.id_alumno == alumno.id, Documento.tipo == "acta").first()
+    # verificar acta
+    acta = db.query(Documento).filter(
+        Documento.id_alumno == alumno.id,
+        Documento.tipo == "acta"
+    ).first()
+
     if not acta:
         raise HTTPException(400, "Debe subir el acta antes de aprobar")
 
     alumno.estado = "aprobado"
     alumno.aprobado_por = user.id
     alumno.aprobado_en = func.now()
+
     db.commit()
+
     registrar_historial(db, user, "APROBAR_ALUMNO", alumno.id)
     return alumno

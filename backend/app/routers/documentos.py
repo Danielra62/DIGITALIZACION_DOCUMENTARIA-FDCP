@@ -6,6 +6,7 @@ from app.services.documento_service import guardar_documento
 from app.services.documento_service import observar_alumno_service
 from app.models.documento import Documento
 from fastapi.responses import FileResponse
+from app.models.alumno import Alumno
 import os
 
 router = APIRouter(prefix="/documentos", tags=["Documentos"])
@@ -19,8 +20,21 @@ def subir(alumno_id: int, tipo: str, file: UploadFile,
 
 @router.get("/alumno/{alumno_id}")
 def listar_por_alumno(alumno_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    # Lógica de visibilidad básica
-    docs = db.query(Documento).options(joinedload(Documento.subidor)).filter(Documento.id_alumno == alumno_id).all()
+
+    alumno = db.query(Alumno).filter(Alumno.id == alumno_id).first()
+
+    if not alumno:
+        raise HTTPException(404, "Alumno no encontrado")
+
+    # 🔥 CONTROL DE ACCESO
+    if user.rol.nombre == "usuario" and alumno.estado != "aprobado":
+        raise HTTPException(403, "No autorizado")
+
+    docs = db.query(Documento)\
+        .options(joinedload(Documento.subidor))\
+        .filter(Documento.id_alumno == alumno_id)\
+        .all()
+
     return docs
 
 @router.get("/ver/{doc_id}")

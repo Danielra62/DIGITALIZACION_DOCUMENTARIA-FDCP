@@ -19,6 +19,11 @@
     <div class="container">
         <div class="flex" style="justify-content: space-between; align-items: center;">
             <h1 id="view-title">Alumnos</h1>
+            <input 
+    type="text" 
+    id="filtro-codigo" 
+    placeholder="Buscar por código..."
+    style="margin-top:10px; padding:8px; width:250px;">
             <button id="btn-nuevo-alumno" class="hidden" style="width: auto; padding: 0.5rem 1rem;">+ Nuevo Alumno</button>
         </div>
 
@@ -80,6 +85,7 @@
     <script src="../js/auth.js"></script>
     <script>
         let userRole = null;
+        let alumnosGlobal = [];
 
         async function init() {
             userRole = await auth.getUserRole();
@@ -87,13 +93,15 @@
             if (userRole === "sistemas") {
                 document.getElementById("view-title").innerText = "Auditoría de Alumnos";
                 document.getElementById("tabla-head").innerHTML = `
-                    <tr>
-                        <th>Código</th>
-                        <th>Nombres</th>
-                        <th>Apellidos</th>
-                        <th>Subido por</th>
-                        <th>Aprobado por</th>
-                    </tr>`;
+                <tr>
+                    <th>Código</th>
+                    <th>Nombres</th>
+                    <th>Apellidos</th>
+                    <th>Subido por</th>
+                    <th>Aprobado por</th>
+                    <th>Creado</th>
+                    <th>Aprobado</th>
+                </tr>`;
             } else if (userRole === "digitalizador") {
                 document.getElementById("view-title").innerText = "Mis Registros";
                 document.getElementById("btn-nuevo-alumno").classList.remove("hidden");
@@ -116,16 +124,17 @@
                         <th>Estado</th>
                         <th>Acciones</th>
                     </tr>`;
-            } else {
-                // Rol desconocido: solo lectura básica
-                document.getElementById("tabla-head").innerHTML = `
-                    <tr>
-                        <th>Código</th>
-                        <th>Nombres</th>
-                        <th>Apellidos</th>
-                        <th>Estado</th>
-                    </tr>`;
-            }
+            } else if (userRole === "usuario") {
+            document.getElementById("view-title").innerText = "Alumnos Aprobados";
+            document.getElementById("tabla-head").innerHTML = `
+                <tr>
+                    <th>Código</th>
+                    <th>Nombres</th>
+                    <th>Apellidos</th>
+                    <th>Estado</th>
+                    <th>Acciones</th>
+                </tr>`;
+        }
 
             await cargarAlumnos();
         }
@@ -150,68 +159,75 @@
             const list = document.getElementById("alumnos-list");
             try {
                 const alumnos = await api.alumnos.listar();
-                list.innerHTML = "";
 
-                if (!alumnos || alumnos.length === 0) {
-                    const cols = userRole === "sistemas" ? 5 : (["digitalizador","administrativo"].includes(userRole) ? 5 : 4);
-                    list.innerHTML = `<tr><td colspan="${cols}" style="text-align:center; color:#888; padding: 2rem;">No hay registros disponibles.</td></tr>`;
-                    return;
-                }
-
-                alumnos.forEach(alumno => {
-                    const tr = document.createElement("tr");
-
-                    if (userRole === "sistemas") {
-                        // Solo auditoría: código, nombre, apellido, digitalizador, aprobador
-                        tr.innerHTML = `
-                            <td>${alumno.codigo}</td>
-                            <td>${alumno.nombres}</td>
-                            <td>${alumno.apellidos}</td>
-                            <td>${alumno.digitalizador ? alumno.digitalizador.nombre_display : '—'}</td>
-                            <td>${alumno.aprobador ? alumno.aprobador.nombre_display : '—'}</td>
-                        `;
-                    } else if (userRole === "digitalizador") {
-                        // Sus propios alumnos: puede editar si está pendiente
-                        let acciones = `<button onclick="verDetalle(${alumno.id})" class="btn-sm btn-ver">Ver</button>`;
-                        if (alumno.estado === "pendiente" || alumno.estado === "observado") {
-                            acciones += `<button onclick="editarAlumno(${alumno.id})" class="btn-sm btn-editar">Editar</button>`;
-                        }
-                        tr.innerHTML = `
-                            <td>${alumno.codigo}</td>
-                            <td>${alumno.nombres}</td>
-                            <td>${alumno.apellidos}</td>
-                            <td><span class="badge badge-${alumno.estado}">${alumno.estado}</span></td>
-                            <td class="flex">${acciones}</td>
-                        `;
-                    } else if (userRole === "administrativo") {
-                        // Revisar y aprobar
-                        tr.innerHTML = `
-                            <td>${alumno.codigo}</td>
-                            <td>${alumno.nombres}</td>
-                            <td>${alumno.apellidos}</td>
-                            <td><span class="badge badge-${alumno.estado}">${alumno.estado}</span></td>
-                            <td>
-                                <button onclick="verDetalle(${alumno.id})" class="btn-sm btn-aprobar">Revisar y Aprobar</button>
-                            </td>
-                        `;
-                    } else {
-                        tr.innerHTML = `
-                            <td>${alumno.codigo}</td>
-                            <td>${alumno.nombres}</td>
-                            <td>${alumno.apellidos}</td>
-                            <td><span class="badge badge-${alumno.estado}">${alumno.estado}</span></td>
-                        `;
-                    }
-
-                    list.appendChild(tr);
-                });
+                alumnosGlobal = alumnos; // 🔥 guardas todo
+                renderAlumnos(alumnos);  // 🔥 render inicial
 
             } catch (error) {
-                list.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--danger);">Error al cargar alumnos.</td></tr>`;
+                list.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--danger);">Error al cargar alumnos.</td></tr>`;
                 console.error(error);
             }
         }
 
+        function renderAlumnos(alumnos) {
+            const list = document.getElementById("alumnos-list");
+            list.innerHTML = "";
+
+            if (!alumnos || alumnos.length === 0) {
+                list.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#888;">Sin resultados</td></tr>`;
+                return;
+            }
+
+            alumnos.forEach(alumno => {
+                const tr = document.createElement("tr");
+
+                if (userRole === "sistemas") {
+                    tr.innerHTML = `
+                        <td>${alumno.codigo}</td>
+                        <td>${alumno.nombres}</td>
+                        <td>${alumno.apellidos}</td>
+                        <td>${alumno.digitalizador ? alumno.digitalizador.nombre_display : '—'}</td>
+                        <td>${alumno.aprobador ? alumno.aprobador.nombre_display : '—'}</td>
+                        <td>${formatearFecha(alumno.creado_en)}</td>
+                        <td>${formatearFecha(alumno.aprobado_en)}</td>
+                    `;
+                } else if (userRole === "digitalizador") {
+                    let acciones = `<button onclick="verDetalle(${alumno.id})" class="btn-sm btn-ver">Ver</button>`;
+                    if (alumno.estado === "pendiente" || alumno.estado === "observado") {
+                        acciones += `<button onclick="editarAlumno(${alumno.id})" class="btn-sm btn-editar">Editar</button>`;
+                    }
+                    tr.innerHTML = `
+                        <td>${alumno.codigo}</td>
+                        <td>${alumno.nombres}</td>
+                        <td>${alumno.apellidos}</td>
+                        <td><span class="badge badge-${alumno.estado}">${alumno.estado}</span></td>
+                        <td class="flex">${acciones}</td>
+                    `;
+                } else if (userRole === "administrativo") {
+                    tr.innerHTML = `
+                        <td>${alumno.codigo}</td>
+                        <td>${alumno.nombres}</td>
+                        <td>${alumno.apellidos}</td>
+                        <td><span class="badge badge-${alumno.estado}">${alumno.estado}</span></td>
+                        <td>
+                            <button onclick="verDetalle(${alumno.id})" class="btn-sm btn-aprobar">Revisar y Aprobar</button>
+                        </td>
+                    `;
+                } else if (userRole === "usuario") {
+                    tr.innerHTML = `
+                        <td>${alumno.codigo}</td>
+                        <td>${alumno.nombres}</td>
+                        <td>${alumno.apellidos}</td>
+                        <td><span class="badge badge-${alumno.estado}">${alumno.estado}</span></td>
+                        <td>
+                            <button onclick="verDetalle(${alumno.id})" class="btn-sm btn-ver">Ver</button>
+                        </td>
+                    `;
+                }
+
+                list.appendChild(tr);
+            });
+        }
         // --- Modal ---
         document.getElementById("btn-nuevo-alumno").onclick = async () => {
             await cargarEscuelas(); // 👈 carga justo antes
@@ -280,7 +296,10 @@
                 btn.innerText = "Guardar";
             }
         };
-
+        function formatearFecha(fecha) {
+    if (!fecha) return "—";
+    return new Date(fecha).toLocaleString();
+}
         async function editarAlumno(id) {
             try {
                 await cargarEscuelas(); 
@@ -306,6 +325,15 @@
         }
 
         init();
+        document.getElementById("filtro-codigo").addEventListener("input", (e) => {
+        const valor = e.target.value.toLowerCase();
+
+        const filtrados = alumnosGlobal.filter(a =>
+            a.codigo.toLowerCase().includes(valor)
+        );
+
+        renderAlumnos(filtrados);
+    });
     </script>
 
     <style>

@@ -31,50 +31,82 @@
     <script src="../js/auth.js"></script>
     <script>
         async function setupDashboard() {
-            const userRole = await auth.getUserRole();
-            const cards = document.getElementById("cards-acceso");
-            const desc = document.getElementById("descripcion-rol");
+            try {
+                const userRole = await auth.getUserRole();
 
-            if (userRole === "sistemas") {
-                document.getElementById("nav-usuarios").classList.remove("hidden");
-                document.getElementById("nav-historial").classList.remove("hidden");
-                document.getElementById("bienvenida").innerText = "Panel de Sistemas";
-                desc.innerText = "Gestión de usuarios y auditoría del sistema.";
-                cards.innerHTML = `
-                    <a href="alumnos.html" class="dash-card">
-                        <div class="dash-icon">📋</div>
-                        <div class="dash-label">Auditoría de Alumnos</div>
-                    </a>
-                    <a href="usuarios.html" class="dash-card">
-                        <div class="dash-icon">👥</div>
-                        <div class="dash-label">Gestión de Usuarios</div>
-                    </a>
-                    <a href="historial.html" class="dash-card">
-                        <div class="dash-icon">🗂</div>
-                        <div class="dash-label">Historial de Auditoría</div>
-                    </a>
-                `;
-            } else if (userRole === "digitalizador") {
-                document.getElementById("bienvenida").innerText = "Panel de Digitalizador";
-                desc.innerText = "Registra nuevos alumnos y sube sus documentos iniciales.";
-                cards.innerHTML = `
-                    <a href="alumnos.html" class="dash-card">
-                        <div class="dash-icon">📝</div>
-                        <div class="dash-label">Mis Registros</div>
-                    </a>
-                `;
-            } else if (userRole === "administrativo") {
-                document.getElementById("bienvenida").innerText = "Panel Administrativo";
-                desc.innerText = "Revisa y aprueba los registros de alumnos pendientes.";
-                cards.innerHTML = `
-                    <a href="alumnos.html" class="dash-card">
-                        <div class="dash-icon">✅</div>
-                        <div class="dash-label">Alumnos por Aprobar</div>
-                    </a>
-                `;
-            } else {
-                document.getElementById("bienvenida").innerText = "Bienvenido al Sistema";
-                desc.innerText = "No tienes acciones disponibles con tu rol actual.";
+                if (!userRole) {
+                    window.location.href = "/index.html";
+                    return;
+                }
+
+                const cards = document.getElementById("cards-acceso");
+                const desc = document.getElementById("descripcion-rol");
+
+                if (userRole === "sistemas") {
+                    document.getElementById("nav-usuarios").classList.remove("hidden");
+                    document.getElementById("nav-historial").classList.remove("hidden");
+
+                    document.getElementById("bienvenida").innerText = "Panel de Sistemas";
+                    desc.innerText = "Gestión de usuarios y auditoría del sistema.";
+
+                    cards.innerHTML = `
+                        <a href="alumnos.html" class="dash-card">
+                            <div class="dash-icon">📋</div>
+                            <div class="dash-label">Auditoría de Alumnos</div>
+                        </a>
+                        <a href="usuarios.html" class="dash-card">
+                            <div class="dash-icon">👥</div>
+                            <div class="dash-label">Gestión de Usuarios</div>
+                        </a>
+                        <a href="historial.html" class="dash-card">
+                            <div class="dash-icon">🗂</div>
+                            <div class="dash-label">Historial de Auditoría</div>
+                        </a>
+                    `;
+
+                } else if (userRole === "digitalizador") {
+                    document.getElementById("bienvenida").innerText = "Panel de Digitalizador";
+                    desc.innerText = "Registra nuevos alumnos y sube sus documentos iniciales.";
+
+                    cards.innerHTML = `
+                        <a href="alumnos.html" class="dash-card">
+                            <div class="dash-icon">📝</div>
+                            <div class="dash-label">Mis Registros</div>
+                        </a>
+                    `;
+
+                } else if (userRole === "administrativo") {
+                    document.getElementById("bienvenida").innerText = "Panel Administrativo";
+                    desc.innerText = "Revisa y aprueba los registros de alumnos pendientes.";
+
+                    cards.innerHTML = `
+                        <a href="alumnos.html" class="dash-card">
+                            <div class="dash-icon">✅</div>
+                            <div class="dash-label">Alumnos por Aprobar</div>
+                        </a>
+                    `;
+
+                } else if (userRole === "usuario") {
+                    // 🔥 AQUI ESTABA LO IMPORTANTE
+                    document.getElementById("bienvenida").innerText = "Panel de Usuario";
+                    desc.innerText = "Consulta alumnos aprobados y descarga sus documentos.";
+
+                    cards.innerHTML = `
+                        <a href="alumnos.html" class="dash-card">
+                            <div class="dash-icon">📄</div>
+                            <div class="dash-label">Ver Alumnos Aprobados</div>
+                        </a>
+                    `;
+
+                } else {
+                    document.getElementById("bienvenida").innerText = "Bienvenido al Sistema";
+                    desc.innerText = "No tienes acciones disponibles con tu rol actual.";
+                    cards.innerHTML = "";
+                }
+
+            } catch (error) {
+                console.error("Error cargando dashboard:", error);
+                window.location.href = "/index.html";
             }
         }
 
